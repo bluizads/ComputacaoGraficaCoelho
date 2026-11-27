@@ -1,10 +1,13 @@
 import WebGPU from './lib/webgpu.js';
-import { createScaleMat4, createTranslationMat4, multiplyMat4 } from './lib/utils.js';
+import { createIdentityMat4, createScaleMat4, createTranslationMat4, multiplyMat4 } from './lib/utils.js';
 import { Camera } from './src/camera.js';
-import { Renderable, SOLID_BUFFERS } from './src/renderable.js';
+import { Renderable, SOLID_BUFFERS, TEXTURED_BUFFERS } from './src/renderable.js';
 import solidVertShader from './src/shaders/phong-solid.vert.js';
 import solidFragShader from './src/shaders/phong-solid.frag.js';
 import { createCubeGeometry } from './src/scene/placeholder.js';
+import textureVertShader from './src/shaders/phong-texture.vert.js';
+import textureFragShader from './src/shaders/phong-texture.frag.js';
+import { createFloorGeometry } from './src/scene/floor.js';
 
 const CANVAS_WIDTH = 1024;
 const CANVAS_HEIGHT = 768;
@@ -13,7 +16,7 @@ const CANVAS_HEIGHT = 768;
 const BACKGROUND_COLOR = { r: 0.42, g: 0.50, b: 0.58, a: 1.0 };
 
 class Scene {
-    constructor(gpu, camera) {
+    constructor(gpu, camera, { floorTexture }) {
         this.camera = camera;
 
         // DUAS LUZES PONTUAIS, em coordenadas de MUNDO.
@@ -39,6 +42,29 @@ class Scene {
         });
 
         this.objects = [];
+
+        this.texturedProgram = gpu.createProgram(textureVertShader,            textureFragShader, {
+            cullMode: 'back',
+            frontFace: 'ccw',
+            buffers: TEXTURED_BUFFERS,
+        });
+
+        // addressMode 'repeat' e a OUTRA METADE da repeticao da textura
+        const floorSampler = gpu.createSampler({
+            addressModeU: 'repeat',
+            addressModeV: 'repeat',
+            magFilter: 'linear',
+            minFilter: 'linear',
+        });
+
+        this.objects.push(new Renderable(gpu, this.texturedProgram, createFloorGeometry({ repeat: 4 }), {
+            name: 'chao',
+            modelMatrix: createIdentityMat4(),
+            material: [0.30, 0.90, 0.10, 16.0],   // azulejo: fosco, brilho largo e discreto
+            baseColor: [1, 1, 1, 1],              // nao usado: o albedo vem da textura
+            texture: floorTexture,
+            sampler: floorSampler,
+}));
 
         // TEMPORARIO: cubo de teste, no lugar onde o coelho vai ficar
         this.objects.push(new Renderable(gpu, this.solidProgram, createCubeGeometry(), {
@@ -69,8 +95,12 @@ class Main {
             depth: true,
         });
 
+        const floorTexture = await this.gpu.createTextureFromImage(
+            new URL('./assets/Tiles074_1K-JPG_Color.jpg', import.meta.url),
+        );
+
         this.camera = new Camera(this.gpu.canvas);
-        this.scene = new Scene(this.gpu, this.camera);
+        this.scene = new Scene(this.gpu, this.camera, { floorTexture });
     }
 
     draw() {
@@ -87,5 +117,6 @@ try {
     app.draw();
 } catch (error) {
     console.error(error);
-    document.body.insertAdjacentHTML('beforeend', `<p style="color:#b00">${error.message}</p>`);
+    document.body.insertAdjacentHTML('beforeend',
+    `<p style="position:relative; z-index:1; background:#fff; color:#b00">${error.message}</p>`);
 }
