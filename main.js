@@ -1,13 +1,14 @@
 import WebGPU from './lib/webgpu.js';
-import { createIdentityMat4, createScaleMat4, createTranslationMat4, multiplyMat4 } from './lib/utils.js';
+import { createIdentityMat4 } from './lib/utils.js';
 import { Camera } from './src/camera.js';
 import { Renderable, SOLID_BUFFERS, TEXTURED_BUFFERS } from './src/renderable.js';
 import solidVertShader from './src/shaders/phong-solid.vert.js';
 import solidFragShader from './src/shaders/phong-solid.frag.js';
-import { createCubeGeometry } from './src/scene/placeholder.js';
 import textureVertShader from './src/shaders/phong-texture.vert.js';
 import textureFragShader from './src/shaders/phong-texture.frag.js';
 import { createFloorGeometry } from './src/scene/floor.js';
+import { loadPly } from './src/geometry/load-ply.js';
+import { createBunnyGeometry, createBunnyModelMatrix } from './src/scene/bunny.js';
 
 const CANVAS_WIDTH = 1024;
 const CANVAS_HEIGHT = 768;
@@ -16,7 +17,7 @@ const CANVAS_HEIGHT = 768;
 const BACKGROUND_COLOR = { r: 0.42, g: 0.50, b: 0.58, a: 1.0 };
 
 class Scene {
-    constructor(gpu, camera, { floorTexture }) {
+    constructor(gpu, camera, { floorTexture, bunnyPly }) {
         this.camera = camera;
 
         // DUAS LUZES PONTUAIS, em coordenadas de MUNDO.
@@ -66,15 +67,13 @@ class Scene {
             sampler: floorSampler,
 }));
 
-        // TEMPORARIO: cubo de teste, no lugar onde o coelho vai ficar
-        this.objects.push(new Renderable(gpu, this.solidProgram, createCubeGeometry(), {
-            name: 'cubo de teste',
-            modelMatrix: multiplyMat4(
-                createTranslationMat4(0, 1.8, 0),
-                createScaleMat4(2, 2, 2),
-            ),
-            material: [0.25, 0.85, 0.25, 48.0],
-            baseColor: [0.92, 0.90, 0.86, 1.0],
+        const bunnyGeometry = createBunnyGeometry(bunnyPly.coords, bunnyPly.indices);
+
+        this.objects.push(new Renderable(gpu, this.solidProgram, bunnyGeometry, {
+            name: 'coelho',
+            modelMatrix: createBunnyModelMatrix(bunnyGeometry.bounds),
+            material: [0.25, 0.85, 0.25, 48.0],   // ks baixo: brilho especular discreto
+            baseColor: [0.92, 0.90, 0.86, 1.0],   // cor solida clara
         }));
     }
 
@@ -95,12 +94,13 @@ class Main {
             depth: true,
         });
 
-        const floorTexture = await this.gpu.createTextureFromImage(
-            new URL('./assets/Tiles074_1K-JPG_Color.jpg', import.meta.url),
-        );
+        const [floorTexture, bunnyPly] = await Promise.all([
+            this.gpu.createTextureFromImage(new URL('./assets/Tiles074_1K-JPG_Color.jpg', import.meta.url)),
+            loadPly(new URL('./assets/bun_zipper.ply', import.meta.url)),
+            ]);
 
         this.camera = new Camera(this.gpu.canvas);
-        this.scene = new Scene(this.gpu, this.camera, { floorTexture });
+        this.scene = new Scene(this.gpu, this.camera, { floorTexture, bunnyPly });
     }
 
     draw() {
